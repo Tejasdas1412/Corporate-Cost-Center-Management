@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  
+  --color-brand-primary: #0052CC;
+  --color-brand-sidebar: #0747A6;
+  --color-brand-bg: #F4F5F7;
+  --color-brand-text: #172B4D;
+  --color-brand-text-subtle: #5E6C84;
+  --color-brand-border: #DFE1E6;
+  --color-brand-surface: #FFFFFF;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-brand-bg text-brand-text text-[14px];
+  }
+}
+
+.card {
+  @apply bg-brand-surface rounded-[4px] border border-brand-border p-5;
+}
+
+.btn-primary {
+  @apply bg-brand-primary hover:bg-[#0747A6] text-white px-4 py-2 rounded-[3px] transition font-semibold flex items-center justify-center gap-2;
+}
+
+.btn-secondary {
+  @apply bg-white hover:bg-[#EBECF0] text-brand-text border border-brand-border px-4 py-2 rounded-[3px] transition font-semibold flex items-center justify-center gap-2;
+}
+
+.input {
+  @apply w-full rounded-[3px] border border-brand-border px-3 py-2 focus:ring-2 focus:ring-blue-500/20 focus:border-brand-primary outline-none transition bg-white;
+}
+
+.status-pill {
+  @apply px-2 py-0.5 rounded-[12px] text-[11px] font-bold uppercase tracking-wide border;
+}
+
+.status-submitted { @apply bg-[#DEEBFF] text-[#0052CC] border-transparent; }
+.status-pending { @apply bg-[#FFF0B3] text-[#172B4D] border-transparent; }
+.status-sent { @apply bg-[#EAE6FF] text-[#403294] border-transparent; }
+.status-completed { @apply bg-[#E3FCEF] text-[#006644] border-transparent; }
