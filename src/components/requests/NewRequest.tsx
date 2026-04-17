@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { CostCenterMaster, CostCenterRequest, RequestType } from '../../types';
-import { Send, Search, Info, CheckCircle2, Globe, Boxes, Box, MapPin, Briefcase, Award } from 'lucide-react';
+import { Send, Search, Info, CheckCircle2, Globe, Boxes, Box, MapPin, Briefcase, Award, AlertTriangle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function NewRequest() {
   const { user } = useAuth();
   const [type, setType] = useState<RequestType>('Creation');
   const [masters, setMasters] = useState<CostCenterMaster[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedCC, setSelectedCC] = useState<CostCenterMaster | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   
   // Form fields
   const [formData, setFormData] = useState({
@@ -48,6 +50,12 @@ export default function NewRequest() {
     }
   }, [type, formData.proposedCode]);
 
+  const filteredMasters = masters.filter(m => 
+    m.CostCenterCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.CostCenterName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.Department.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   const handleCCSelect = (cc: CostCenterMaster) => {
     setSelectedCC(cc);
     setFormData({
@@ -70,9 +78,14 @@ export default function NewRequest() {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowConfirmation(true);
+  };
+
+  const confirmSubmit = async () => {
     setLoading(true);
+    setShowConfirmation(false);
     
     try {
       const requestID = `REQ-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
@@ -187,8 +200,20 @@ export default function NewRequest() {
                   <Search size={16} className="text-blue-500" />
                   Select Cost Center to Amend
                 </label>
+                
+                <div className="relative">
+                  <Search size={18} className="absolute left-4 top-3 text-gray-400" />
+                  <input 
+                    type="text"
+                    placeholder="Search by Code, Name, or Department..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="input pl-12 w-full bg-white transition-all focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-60 overflow-y-auto p-4 bg-gray-50 rounded-xl border border-gray-100">
-                  {masters.map(cc => (
+                  {filteredMasters.map(cc => (
                     <button
                       key={cc.id}
                       type="button"
@@ -200,7 +225,7 @@ export default function NewRequest() {
                       <p className="text-[10px] uppercase tracking-widest mt-1 opacity-70">{cc.Department}</p>
                     </button>
                   ))}
-                  {masters.length === 0 && <p className="col-span-2 text-center text-gray-400 py-4 italic">No active cost centers found in master data.</p>}
+                  {filteredMasters.length === 0 && <p className="col-span-2 text-center text-gray-400 py-4 italic">No matching cost centers found.</p>}
                 </div>
               </motion.div>
             )}
@@ -343,6 +368,101 @@ export default function NewRequest() {
           </div>
         </form>
       </div>
+
+      <AnimatePresence>
+        {showConfirmation && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="text-amber-500" size={24} />
+                  <h3 className="text-xl font-bold text-gray-900">Confirm Request Changes</h3>
+                </div>
+                <button onClick={() => setShowConfirmation(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto">
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Identification</p>
+                    <div>
+                      <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Cost Center Name</label>
+                      <p className="font-bold text-gray-900">{formData.proposedName}</p>
+                      <p className="font-mono text-xs text-blue-600 mt-1">{formData.proposedCode}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Request Type</label>
+                      <span className={`badge ${type === 'Creation' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
+                        {type}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Ownership</p>
+                    <div>
+                      <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Department</label>
+                      <p className="font-bold text-gray-900">{formData.proposedDept}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Business Manager / PMO</label>
+                      <p className="font-bold text-gray-900">{formData.proposedManager}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100 space-y-4">
+                   <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Technical Metadata</p>
+                   <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <span className="text-gray-500 block">Domain:</span>
+                        <span className="font-bold text-blue-900">{formData.domain}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Location:</span>
+                        <span className="font-bold text-blue-900">{formData.location}</span>
+                      </div>
+                   </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Justification</p>
+                  <p className="text-sm text-gray-700 italic bg-gray-50 p-4 rounded-xl border border-gray-100 leading-relaxed">
+                    "{formData.justification}"
+                  </p>
+                </div>
+
+                <div className="flex items-start gap-4 p-4 bg-amber-50 rounded-xl border border-amber-100">
+                  <div className="mt-1 flex-shrink-0">
+                    <AlertTriangle className="text-amber-500" size={18} />
+                  </div>
+                  <p className="text-xs text-amber-800 leading-relaxed font-medium">
+                    Please ensure all details are accurate. Once submitted, this request will be sent to the ISPL PM team for processing in the official master record.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                <button onClick={() => setShowConfirmation(false)} className="btn-secondary px-8">Back to Edit</button>
+                <button 
+                  onClick={confirmSubmit}
+                  className="btn-primary px-10 shadow-lg shadow-blue-500/20"
+                >
+                  <Send size={18} />
+                  Finalize & Submit
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

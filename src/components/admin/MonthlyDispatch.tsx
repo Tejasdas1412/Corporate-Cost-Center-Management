@@ -44,11 +44,11 @@ export default function MonthlyDispatch() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
 
-      alert("Batch dispatched successfully! The ISPL PM team has been notified via email.");
+      alert("Batch dispatched successfully! The items have been grouped and are now available for manual extraction in the History section below.");
       fetchData();
     } catch (error) {
       console.error(error);
-      alert("Dispatch failed. Please check your SMTP settings in the console.");
+      alert("Dispatch failed. Please check the system logs.");
     } finally {
       setLoading(false);
     }

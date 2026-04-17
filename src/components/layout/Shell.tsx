@@ -30,10 +30,11 @@ export default function Shell() {
     { to: '/tracker', icon: ListFilter, label: 'Request Tracker' },
     { to: '/ispl-pm', icon: Search, label: 'ISPL Workbench' },
     { to: '/dispatch', icon: Mail, label: 'Monthly Dispatch' },
-    { to: '/master-data', icon: Database, label: 'Master Data' },
+    { to: '/master-view', icon: Search, label: 'Master View' },
   ];
 
   if (user?.roles?.includes('ADMIN')) {
+    navItems.splice(5, 0, { to: '/master-data', icon: Database, label: 'Master Admin' });
     navItems.push({ to: '/access', icon: ShieldHalf, label: 'Access Management' });
   }
 

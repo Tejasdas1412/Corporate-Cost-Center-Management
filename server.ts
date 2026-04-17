@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as xlsx from 'xlsx';
 import fs from 'fs';
-import initSqlJs from 'sql.js';
+import Database from 'better-sqlite3';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
@@ -14,54 +14,14 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(process.cwd(), 'ccms.sqlite');
+const PORT = 3000;
 
 let db: any;
 
 async function initDB() {
-  const SQL = await initSqlJs();
+  console.log('Initializing Database (better-sqlite3)...');
+  db = new Database(DB_PATH);
   
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  // Wrapper for common operations to mimic better-sqlite3
-  db.prepare = (sql: string) => {
-    const stmt = db.prepare(sql);
-    return {
-      run: (...args: any[]) => {
-        stmt.run(args);
-        persistDB();
-      },
-      get: (...args: any[]) => {
-        stmt.bind(args);
-        if (stmt.step()) {
-          const row = stmt.getAsObject();
-          stmt.free();
-          return row;
-        }
-        stmt.free();
-        return null;
-      },
-      all: (...args: any[]) => {
-        stmt.bind(args);
-        const rows = [];
-        while (stmt.step()) {
-          rows.push(stmt.getAsObject());
-        }
-        stmt.free();
-        return rows;
-      }
-    };
-  };
-
-  db.exec = (sql: string) => {
-    db.run(sql);
-    persistDB();
-  };
-
   // Create Tables
   db.exec(`
     CREATE TABLE IF NOT EXISTS cost_center_master (
@@ -177,6 +137,7 @@ async function initDB() {
       Timestamp TEXT
     );
   `);
+  console.log('Database tables ready.');
 
   // Migration: Add columns if they don't exist
   const migrations = [
@@ -234,12 +195,7 @@ async function initDB() {
       row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14]
     ));
   }
-}
-
-function persistDB() {
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_PATH, buffer);
+  console.log('Database initialization complete.');
 }
 
 async function performDispatch(sentBy: string, sentByEmail: string) {
@@ -253,7 +209,7 @@ async function performDispatch(sentBy: string, sentByEmail: string) {
   const batchMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
   const batchID = `BATCH-${Date.now()}`;
   
-  // 1. Generate Excel
+  // 1. Generate Excel (Used for Batch Logging metadata)
   const wb = xlsx.utils.book_new();
   const ws = xlsx.utils.json_to_sheet(requests);
   xlsx.utils.book_append_sheet(wb, ws, "Requests");
@@ -261,35 +217,7 @@ async function performDispatch(sentBy: string, sentByEmail: string) {
   const filePath = path.join(__dirname, fileName);
   xlsx.writeFile(wb, filePath);
 
-  // 2. Email the file
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_PORT === '465',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
-
-    try {
-      await transporter.sendMail({
-        from: `"CC Control Tower" <${process.env.SMTP_USER}>`,
-        to: process.env.ISPL_PM_EMAIL || 'ispl-pm@company.com',
-        subject: `Monthly Cost Center Dispatch - ${batchMonth}`,
-        text: `Please find attached the dispatch report for ${batchMonth}.\n\nTotal Requests: ${requests.length}\nBatch ID: ${batchID}`,
-        attachments: [{ filename: fileName, path: filePath }]
-      });
-      console.log(`Dispatch email sent for ${batchID}`);
-    } catch (err) {
-      console.error('Failed to send dispatch email:', err);
-    }
-  } else {
-    console.warn('SMTP not configured. Skipping email dispatch.');
-  }
-
-  // 3. Update Database
+  // 2. Update Database
   const batchDate = new Date().toISOString();
   db.prepare(`
     UPDATE requests 
@@ -297,13 +225,13 @@ async function performDispatch(sentBy: string, sentByEmail: string) {
     WHERE Status IN ('Submitted', 'Pending Monthly Dispatch')
   `).run(batchID, batchDate);
 
-  // 4. Log the Batch
+  // 3. Log the Batch
   db.prepare(`
     INSERT INTO batch_logs (BatchID, BatchMonth, BatchDate, TotalRequestsSent, FileName, SentToEmail, SentBy, SentTimestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(batchID, batchMonth, batchDate, requests.length, fileName, process.env.ISPL_PM_EMAIL || 'ispl-pm@company.com', sentBy, batchDate);
+  `).run(batchID, batchMonth, batchDate, requests.length, fileName, 'Manual Extraction', sentBy, batchDate);
 
-  // Clean up file
+  // Clean up physical file after logging metadata
   setTimeout(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); }, 60000);
 }
 
@@ -322,7 +250,6 @@ async function startServer() {
   });
 
   const app = express();
-  const PORT = 3000;
 
   app.use(express.json());
 
@@ -381,6 +308,41 @@ async function startServer() {
     res.json(db.prepare('SELECT * FROM cost_center_master ORDER BY CostCenterCode ASC').all());
   });
 
+  app.get('/api/master/export', (req, res) => {
+    try {
+      const masters = db.prepare('SELECT * FROM cost_center_master ORDER BY CostCenterCode ASC').all() as any[];
+      
+      const exportData = masters.map(m => ({
+        'CC Code': m.CostCenterCode,
+        'CC Name': m.CostCenterName,
+        'Department': m.Department,
+        'Team': m.Team,
+        'Business Manager': m.BusinessManager,
+        'PMO': m.PMO,
+        'HOD': m.HOD,
+        'Domain': m.Domain,
+        'Cluster': m.Cluster,
+        'Paradigm Code': m.ParadigmCode,
+        'Location': m.Location,
+        'ExCo': m.ExCo,
+        'Status': m.Status,
+        'Effective Date': m.EffectiveDate
+      }));
+
+      const wb = xlsx.utils.book_new();
+      const ws = xlsx.utils.json_to_sheet(exportData);
+      xlsx.utils.book_append_sheet(wb, ws, "MasterData");
+      
+      const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=Cost_Center_Master.xlsx');
+      res.send(buffer);
+    } catch (err) {
+      res.status(500).json({ error: 'Export failed' });
+    }
+  });
+
   app.get('/api/audit-logs', (req, res) => {
     try {
       res.json(db.prepare('SELECT * FROM audit_logs ORDER BY Timestamp DESC LIMIT 200').all());
@@ -390,7 +352,9 @@ async function startServer() {
   app.post('/api/master', (req, res) => {
     try {
       const m = req.body;
-      const performedBy = req.headers['x-user-email'] || 'System';
+      const userName = req.headers['x-user-name'] || 'System';
+      const userEmail = req.headers['x-user-email'] || 'unknown';
+      const performedBy = req.headers['x-user-name'] ? `${userName} (${userEmail})` : userEmail;
       
       const existing = db.prepare('SELECT * FROM cost_center_master WHERE CostCenterCode = ?').get(m.CostCenterCode);
       const action = existing ? 'UPDATE' : 'CREATE';
@@ -439,7 +403,9 @@ async function startServer() {
   app.delete('/api/master/:id', (req, res) => {
     try {
       const { id } = req.params;
-      const performedBy = req.headers['x-user-email'] || 'System';
+      const userName = req.headers['x-user-name'] || 'System';
+      const userEmail = req.headers['x-user-email'] || 'unknown';
+      const performedBy = req.headers['x-user-name'] ? `${userName} (${userEmail})` : userEmail;
       const item = db.prepare('SELECT * FROM cost_center_master WHERE id = ?').get(id);
       
       if (item) {

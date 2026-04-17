@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CostCenterMaster } from '../../types';
-import { Search, Database, Trash2, ShieldCheck, Tag, Map as MapIcon, Globe, MapPin, Briefcase, Award, History, User as UserIcon, Clock } from 'lucide-react';
+import { Search, Database, Trash2, ShieldCheck, Tag, Map as MapIcon, Globe, MapPin, Briefcase, Award, History, User as UserIcon, Clock, Download } from 'lucide-react';
 import MapContainer from '../MapContainer';
 import { useAuth } from '../../context/AuthContext';
 
@@ -55,7 +55,8 @@ export default function MasterData() {
       await fetch(`/api/master/${id}`, { 
         method: 'DELETE',
         headers: {
-          'x-user-email': user?.email || 'Anonymous'
+          'x-user-email': user?.email || 'unknown',
+          'x-user-name': user?.displayName || 'Anonymous'
         }
       });
       fetchMasters();
@@ -98,6 +99,13 @@ export default function MasterData() {
                    <ShieldCheck size={16} />
                    Official Master Record
                 </div>
+                <button 
+                  onClick={() => window.location.href = '/api/master/export'}
+                  className="btn-primary flex items-center gap-2 px-4 py-2 text-xs"
+                >
+                  <Download size={14} />
+                  Export Excel
+                </button>
               </div>
 
               <div className="card !p-0 overflow-hidden">

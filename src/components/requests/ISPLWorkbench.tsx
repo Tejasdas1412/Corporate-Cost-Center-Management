@@ -90,7 +90,8 @@ export default function ISPLWorkbench() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-user-email': user?.email || 'Anonymous'
+          'x-user-email': user?.email || 'unknown',
+          'x-user-name': user?.displayName || 'Anonymous'
         },
         body: JSON.stringify(masterPayload)
       });

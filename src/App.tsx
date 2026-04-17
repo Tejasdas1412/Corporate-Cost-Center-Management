@@ -8,6 +8,7 @@ import Tracker from './components/requests/Tracker';
 import ISPLWorkbench from './components/requests/ISPLWorkbench';
 import MonthlyDispatch from './components/admin/MonthlyDispatch';
 import MasterData from './components/master/MasterData';
+import MasterDataReadOnly from './components/master/MasterDataReadOnly';
 import UserManagement from './components/admin/UserManagement';
 import { Activity, ShieldCheck, User as UserIcon, Loader2 } from 'lucide-react';
 
@@ -100,8 +101,9 @@ function AppContent() {
           <Route path="/tracker" element={<Tracker />} />
           <Route path="/ispl-pm" element={<ISPLWorkbench />} />
           <Route path="/dispatch" element={<MonthlyDispatch />} />
-          <Route path="/master-data" element={<MasterData />} />
-          <Route path="/access" element={<UserManagement />} />
+          <Route path="/master-data" element={user?.roles?.includes('ADMIN') ? <MasterData /> : <Navigate to="/" />} />
+          <Route path="/master-view" element={<MasterDataReadOnly />} />
+          <Route path="/access" element={user?.roles?.includes('ADMIN') ? <UserManagement /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Route>
       </Routes>
