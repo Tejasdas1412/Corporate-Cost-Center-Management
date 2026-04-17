@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as xlsx from 'xlsx';
 import fs from 'fs';
-import Database from 'better-sqlite3';
+import initSqlJs from 'sql.js';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
@@ -19,9 +19,69 @@ const PORT = 3000;
 let db: any;
 
 async function initDB() {
-  console.log('Initializing Database (better-sqlite3)...');
-  db = new Database(DB_PATH);
-  
+  console.log('>>> [START] Initializing Database...');
+  try {
+    const SQL = await initSqlJs();
+    console.log('>>> [OK] SQL.js Engine loaded.');
+    
+    if (fs.existsSync(DB_PATH)) {
+      console.log('>>> [INFO] Loading existing database from disk:', DB_PATH);
+      const fileBuffer = fs.readFileSync(DB_PATH);
+      db = new SQL.Database(fileBuffer);
+    } else {
+      console.log('>>> [INFO] Creating new database in memory.');
+      db = new SQL.Database();
+    }
+  } catch (err) {
+    console.error('>>> [CRITICAL] Failed to initialize SQL.js:', err);
+    throw err;
+  }
+
+  // Robust wrapper to mimic better-sqlite3 API while using sql.js
+  const dbWrapper = {
+    exec: (sql: string) => {
+      db.run(sql);
+      persistDB();
+    },
+    prepare: (sql: string) => {
+      return {
+        run: (...params: any[]) => {
+          db.run(sql, params);
+          persistDB();
+        },
+        get: (...params: any[]) => {
+          const stmt = db.prepare(sql);
+          stmt.bind(params);
+          let result = null;
+          if (stmt.step()) {
+            result = stmt.getAsObject();
+          }
+          stmt.free();
+          return result;
+        },
+        all: (...params: any[]) => {
+          const stmt = db.prepare(sql);
+          stmt.bind(params);
+          const results = [];
+          while (stmt.step()) {
+            results.push(stmt.getAsObject());
+          }
+          stmt.free();
+          return results;
+        }
+      };
+    },
+    transaction: (fn: Function) => {
+      // Basic transaction wrapper for sql.js bulk ops
+      fn();
+      persistDB();
+    }
+  };
+
+  db.exec = dbWrapper.exec;
+  db.prepare = dbWrapper.prepare;
+  db.transaction = dbWrapper.transaction;
+
   // Create Tables
   db.exec(`
     CREATE TABLE IF NOT EXISTS cost_center_master (
@@ -198,6 +258,16 @@ async function initDB() {
   console.log('Database initialization complete.');
 }
 
+function persistDB() {
+  try {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(DB_PATH, buffer);
+  } catch (err) {
+    console.error('>>> [WARN] Database persistence failed:', err);
+  }
+}
+
 async function performDispatch(sentBy: string, sentByEmail: string) {
   const requests = db.prepare("SELECT * FROM requests WHERE Status IN ('Submitted', 'Pending Monthly Dispatch')").all();
   
@@ -236,7 +306,13 @@ async function performDispatch(sentBy: string, sentByEmail: string) {
 }
 
 async function startServer() {
-  await initDB();
+  console.log('>>> [START] Booting CC Control Tower Server...');
+  try {
+    await initDB();
+    console.log('>>> [OK] Database logic initialized.');
+  } catch (err) {
+    console.error('>>> [FATAL] Database initialization crashed:', err);
+  }
   
   // Setup Automated Monthly Dispatch Job (Runs on the 9th of every month at midnight)
   cron.schedule('0 0 9 * *', async () => {
@@ -250,10 +326,12 @@ async function startServer() {
   });
 
   const app = express();
+  console.log('>>> [STEP] Configuring Middleware...');
 
   app.use(express.json());
 
-  app.get('/api/health', (req, res) => res.send('OK'));
+  app.get('/api/health', (req, res) => res.send('OK - PROMPT BOOT'));
+  app.get('/api/ready', (req, res) => res.json({ ready: !!db }));
 
   // --- API Routes ---
   app.get('/api/requests', (req, res) => {
@@ -597,20 +675,26 @@ async function startServer() {
   });
 
   // Vite middleware
+  console.log('>>> [STEP] Initializing UI Layer...');
   if (process.env.NODE_ENV !== 'production') {
+    console.log('>>> [INFO] Mode: Development (Vite Middleware Active)');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
+    console.log('>>> [INFO] Mode: Production (Static Assets Active)');
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
+  console.log('>>> [STEP] Binding to Port 3000...');
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+    console.log('>>> [OK] SERVER ONLINE');
+    console.log(`>>> [URL] http://localhost:${PORT}`);
+    console.log('>>> [READY] Application is now accepting requests.');
   });
 }
 

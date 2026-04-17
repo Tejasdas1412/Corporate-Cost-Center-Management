@@ -10,11 +10,23 @@ export default function Tracker() {
   useEffect(() => {
     fetch('/api/requests')
       .then(res => res.json())
-      .then(data => setRequests(data))
-      .catch(console.error);
+      .then(data => {
+        if (Array.isArray(data)) {
+          setRequests(data);
+        } else {
+          console.error('Expected array for requests, got:', data);
+          setRequests([]);
+        }
+      })
+      .catch(err => {
+        console.error('Fetch error:', err);
+        setRequests([]);
+      });
   }, []);
 
-  const filtered = requests.filter(r => {
+  const safeRequests = Array.isArray(requests) ? requests : [];
+
+  const filtered = safeRequests.filter(r => {
     const matchesSearch = 
       r.RequestID.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.ProposedCostCenterCode.toLowerCase().includes(searchTerm.toLowerCase()) ||

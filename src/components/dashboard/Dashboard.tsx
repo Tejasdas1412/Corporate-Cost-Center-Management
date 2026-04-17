@@ -17,20 +17,32 @@ export default function Dashboard() {
   useEffect(() => {
     fetch('/api/requests')
       .then(res => res.json())
-      .then(data => setRequests(data))
-      .catch(console.error);
+      .then(data => {
+        if (Array.isArray(data)) {
+          setRequests(data);
+        } else {
+          console.error('Expected array for requests, got:', data);
+          setRequests([]);
+        }
+      })
+      .catch(err => {
+        console.error('Fetch error:', err);
+        setRequests([]);
+      });
   }, []);
 
+  const safeRequests = Array.isArray(requests) ? requests : [];
+
   const stats = [
-    { label: 'Total Requests', value: requests.length, icon: BarChart, color: 'brand-primary' },
-    { label: 'Pending Dispatch', value: requests.filter(r => r.Status === 'Submitted' || r.Status === 'Pending Monthly Dispatch').length, icon: Clock, color: 'brand-primary' },
-    { label: 'Sent to ISPL PM', value: requests.filter(r => r.Status === 'Sent to ISPL PM' || r.Status === 'In Progress by ISPL PM').length, icon: Send, color: 'brand-primary' },
-    { label: 'Completed', value: requests.filter(r => r.Status === 'Completed' || r.Status === 'Notification Sent').length, icon: CheckCircle2, color: 'brand-primary' },
+    { label: 'Total Requests', value: safeRequests.length, icon: BarChart, color: 'brand-primary' },
+    { label: 'Pending Dispatch', value: safeRequests.filter(r => r.Status === 'Submitted' || r.Status === 'Pending Monthly Dispatch').length, icon: Clock, color: 'brand-primary' },
+    { label: 'Sent to ISPL PM', value: safeRequests.filter(r => r.Status === 'Sent to ISPL PM' || r.Status === 'In Progress by ISPL PM').length, icon: Send, color: 'brand-primary' },
+    { label: 'Completed', value: safeRequests.filter(r => r.Status === 'Completed' || r.Status === 'Notification Sent').length, icon: CheckCircle2, color: 'brand-primary' },
   ];
 
   const typeStats = [
-    { label: 'Creation Requests', value: requests.filter(r => r.RequestType === 'Creation').length, icon: PlusCircle },
-    { label: 'Amendment Requests', value: requests.filter(r => r.RequestType === 'Amendment').length, icon: Edit3 },
+    { label: 'Creation Requests', value: safeRequests.filter(r => r.RequestType === 'Creation').length, icon: PlusCircle },
+    { label: 'Amendment Requests', value: safeRequests.filter(r => r.RequestType === 'Amendment').length, icon: Edit3 },
   ];
 
   const getDaysUntilNinth = () => {
@@ -107,7 +119,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-brand-border">
-                    {requests.slice(0, 5).map((req) => (
+                    {safeRequests.slice(0, 5).map((req) => (
                       <tr key={req.id} className="hover:bg-[#F4F5F7] transition-all">
                         <td className="px-5 py-4 text-[12px] font-bold text-brand-primary uppercase tracking-tighter">{req.RequestID}</td>
                         <td className="px-5 py-4">
