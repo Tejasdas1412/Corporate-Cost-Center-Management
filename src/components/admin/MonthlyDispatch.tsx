@@ -31,49 +31,24 @@ export default function MonthlyDispatch() {
     setLoading(true);
 
     try {
-      const batchMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
-      const batchID = `BAT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-      
       // 1. Call Backend to Collate & Send
       const response = await fetch('/api/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requests: pending.map(p => ({
-            RequestID: p.RequestID,
-            Type: p.RequestType,
-            ExistingCode: p.ExistingCostCenterCode,
-            ProposedCode: p.ProposedCostCenterCode,
-            ProposedName: p.ProposedCostCenterName,
-            Requester: p.SubmittedBy
-          })),
-          batchMonth,
-          sentByEmail: user?.email,
-          batchID
+          sentBy: user?.displayName,
+          sentByEmail: user?.email
         })
       });
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
 
-      // 2. Update SQL Request States
-      for (const p of pending) {
-        await fetch(`/api/requests/${p.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            Status: 'Sent to ISPL PM',
-            BatchSentDate: new Date().toISOString(),
-            BatchID: batchID
-          })
-        });
-      }
-
-      alert("Batch dispatched successfully! The report is now available for download.");
+      alert("Batch dispatched successfully! The ISPL PM team has been notified via email.");
       fetchData();
     } catch (error) {
       console.error(error);
-      alert("Dispatch failed.");
+      alert("Dispatch failed. Please check your SMTP settings in the console.");
     } finally {
       setLoading(false);
     }

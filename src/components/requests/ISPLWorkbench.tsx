@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { CostCenterRequest, CostCenterMaster } from '../../types';
 import { Save, CheckCircle2, User, Building2, MessageSquare, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function ISPLWorkbench() {
+  const { user } = useAuth();
   const [requests, setRequests] = useState<CostCenterRequest[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [updateData, setUpdateData] = useState<Partial<CostCenterRequest>>({});
@@ -86,7 +88,10 @@ export default function ISPLWorkbench() {
 
       await fetch('/api/master', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-email': user?.email || 'Anonymous'
+        },
         body: JSON.stringify(masterPayload)
       });
 
