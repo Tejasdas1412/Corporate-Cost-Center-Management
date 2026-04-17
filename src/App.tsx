@@ -21,11 +21,22 @@ function AppContent() {
     fetch('/api/users')
       .then(res => res.json())
       .then(data => {
-        setAvailableUsers(data);
+        if (Array.isArray(data)) {
+          setAvailableUsers(data);
+        } else {
+          console.error('Expected array for users, got:', data);
+          setAvailableUsers([]);
+        }
         setFetchingUsers(false);
       })
-      .catch(() => setFetchingUsers(false));
+      .catch((err) => {
+        console.error('Fetch error:', err);
+        setAvailableUsers([]);
+        setFetchingUsers(false);
+      });
   }, []);
+
+  const safeUsers = Array.isArray(availableUsers) ? availableUsers : [];
 
   if (isLoading || fetchingUsers) return (
     <div className="min-h-screen flex items-center justify-center bg-brand-sidebar">
@@ -55,7 +66,7 @@ function AppContent() {
           </div>
           
           <div className="space-y-3">
-            {availableUsers.map((u) => (
+            {safeUsers.map((u) => (
               <button 
                 key={u.id}
                 onClick={() => login({
@@ -75,7 +86,7 @@ function AppContent() {
                 </div>
               </button>
             ))}
-            {availableUsers.length === 0 && (
+            {safeUsers.length === 0 && (
               <div className="flex flex-col items-center gap-2 p-8 text-brand-text-subtle">
                 <Loader2 className="animate-spin" size={24} />
                 <p className="text-xs">Initializing gateway...</p>

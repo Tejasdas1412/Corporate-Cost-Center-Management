@@ -21,7 +21,14 @@ let db: any;
 async function initDB() {
   console.log('>>> [START] Initializing Database...');
   try {
-    const SQL = await initSqlJs();
+    // Explicitly configure sql.js to find the wasm file in node_modules
+    const sqlWasmPath = path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+    const SQL = await initSqlJs({
+      locateFile: (file) => {
+        if (file === 'sql-wasm.wasm') return sqlWasmPath;
+        return file;
+      }
+    });
     console.log('>>> [OK] SQL.js Engine loaded.');
     
     if (fs.existsSync(DB_PATH)) {
@@ -683,6 +690,19 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+
+    // Handle index.html manually for SPA behavior in development
+    app.get('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        let template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     console.log('>>> [INFO] Mode: Production (Static Assets Active)');
     const distPath = path.join(process.cwd(), 'dist');
