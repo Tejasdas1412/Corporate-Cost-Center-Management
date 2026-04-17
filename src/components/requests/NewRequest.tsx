@@ -1,18 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { CostCenterMaster, CostCenterRequest, RequestType } from '../../types';
-import { Send, Search, Info, CheckCircle2, Globe, Boxes, Box, MapPin, Briefcase, Award, AlertTriangle, X } from 'lucide-react';
+import { Send, Search, Info, CheckCircle2, Globe, Boxes, Box, MapPin, Briefcase, Award, AlertTriangle, X, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as xlsx from 'xlsx';
 
 export default function NewRequest() {
   const { user } = useAuth();
-  const [type, setType] = useState<RequestType>('Creation');
+  const [type, setType] = useState<RequestType | 'Bulk'>('Creation');
   const [masters, setMasters] = useState<CostCenterMaster[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCC, setSelectedCC] = useState<CostCenterMaster | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [bulkItems, setBulkItems] = useState<any[]>([]);
+  const [showBulkReview, setShowBulkReview] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Form fields
   const [formData, setFormData] = useState({
@@ -158,6 +162,45 @@ export default function NewRequest() {
     }
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = xlsx.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = xlsx.utils.sheet_to_json(ws);
+      setBulkItems(data);
+      setShowBulkReview(data.length > 0);
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const confirmBulkSubmit = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch('/api/requests/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: bulkItems,
+          submittedBy: user?.displayName,
+          submittedByEmail: user?.email
+        })
+      });
+      if (resp.ok) setSubmitted(true);
+      setShowBulkReview(false);
+    } catch (err) {
+      console.error(err);
+      alert('Bulk upload failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (submitted) {
     return (
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-100 shadow-sm">
@@ -174,20 +217,59 @@ export default function NewRequest() {
       <div className="card mb-8">
         <div className="flex gap-4 p-1 bg-gray-100 rounded-xl mb-8">
           <button 
-            onClick={() => { setType('Creation'); setSelectedCC(null); setFormData(prev => ({...prev, proposedCode: ''}))}}
+            onClick={() => { setType('Creation'); setSelectedCC(null); setSearchTerm(''); setFormData(prev => ({...prev, proposedCode: ''}))}}
             className={`flex-1 py-3 rounded-lg font-bold transition-all ${type === 'Creation' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Create New
           </button>
           <button 
-            onClick={() => setType('Amendment')}
+            onClick={() => { setType('Amendment'); setSearchTerm(''); }}
             className={`flex-1 py-3 rounded-lg font-bold transition-all ${type === 'Amendment' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Amend Existing
           </button>
+          <button 
+            onClick={() => setType('Bulk')}
+            className={`flex-1 py-3 rounded-lg font-bold transition-all ${type === 'Bulk' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Bulk Upload
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-10">
+        {type === 'Bulk' ? (
+          <div className="flex flex-col items-center justify-center py-20 bg-blue-50/30 rounded-2xl border-2 border-dashed border-blue-200">
+            <FileSpreadsheet size={64} className="text-blue-500 mb-6 opacity-40" />
+            <h3 className="text-xl font-bold text-blue-900 mb-2">Mass Creation & Amendments</h3>
+            <p className="text-gray-500 text-center max-w-md mb-10 px-6">
+              Download our standardized Excel template, fill in your details, and upload it back to create multiple requests at once.
+            </p>
+            
+            <div className="flex flex-wrap justify-center gap-4">
+               <a 
+                 href="/api/requests/template" 
+                 className="flex items-center gap-2 px-6 py-3 bg-white border border-blue-200 text-blue-700 font-bold rounded-xl hover:bg-blue-50 transition-colors shadow-sm"
+               >
+                 <Download size={18} />
+                 Download Template
+               </a>
+               <button 
+                 onClick={() => fileInputRef.current?.click()}
+                 className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
+               >
+                 <Upload size={18} />
+                 Upload & Process
+               </button>
+               <input 
+                 type="file" 
+                 ref={fileInputRef} 
+                 onChange={handleFileUpload} 
+                 className="hidden" 
+                 accept=".xlsx, .xls" 
+               />
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-10">
           <AnimatePresence mode="wait">
             {type === 'Amendment' && (
               <motion.div 
@@ -367,6 +449,7 @@ export default function NewRequest() {
              </button>
           </div>
         </form>
+        )}
       </div>
 
       <AnimatePresence>
@@ -457,6 +540,81 @@ export default function NewRequest() {
                 >
                   <Send size={18} />
                   Finalize & Submit
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showBulkReview && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full flex flex-col h-[80vh]"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Bulk Upload Review ({bulkItems.length} items)</h3>
+                  <p className="text-xs text-gray-500">Please review the data extracted from your file before processing.</p>
+                </div>
+                <button onClick={() => setShowBulkReview(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto p-0">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100">
+                    <tr>
+                      <th className="px-6 py-4">Type</th>
+                      <th className="px-6 py-4">Source ID</th>
+                      <th className="px-6 py-4">Proposed Name</th>
+                      <th className="px-6 py-4">Department</th>
+                      <th className="px-6 py-4">Paradigm</th>
+                      <th className="px-6 py-4">Location</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {bulkItems.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-6 py-4">
+                          <span className={`badge ${item.RequestType === 'Creation' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
+                            {item.RequestType}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-mono text-xs text-blue-600">{item.ExistingCostCenterCode || '-'}</td>
+                        <td className="px-6 py-4 font-bold text-xs">{item.ProposedCostCenterName}</td>
+                        <td className="px-6 py-4 text-xs font-medium">{item.DepartmentProposed}</td>
+                        <td className="px-6 py-4 text-xs">{item.ParadigmCodeProposed}</td>
+                        <td className="px-6 py-4 text-xs">{item.LocationProposed}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                <button onClick={() => setShowBulkReview(false)} className="btn-secondary px-8">Cancel</button>
+                <button 
+                  disabled={loading}
+                  onClick={confirmBulkSubmit}
+                  className="btn-primary px-10 shadow-lg shadow-blue-500/20"
+                >
+                   {loading ? (
+                     <>
+                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                       Processing...
+                     </>
+                   ) : (
+                     <>
+                       <Send size={18} />
+                       Finalize & Process All
+                     </>
+                   )}
                 </button>
               </div>
             </motion.div>

@@ -292,6 +292,96 @@ async function startServer() {
     } catch (err) { res.status(500).json({ error: 'Failed' }); }
   });
 
+  app.post('/api/requests/bulk', (req, res) => {
+    try {
+      const { items, submittedBy, submittedByEmail } = req.body;
+      const stmt = db.prepare(`
+        INSERT INTO requests (
+          RequestID, RequestType, ExistingCostCenterCode, ExistingCostCenterName,
+          ProposedCostCenterCode, ProposedCostCenterName, DepartmentOld, DepartmentProposed,
+          TeamOld, TeamProposed, BusinessManagerOld, BusinessManagerProposed,
+          PMOOld, PMOProposed, HODOld, HODProposed, DomainOld, DomainProposed, ClusterOld, ClusterProposed,
+          Cluster1Old, Cluster1Proposed, Cluster2Old, Cluster2Proposed,
+          ParadigmCodeOld, ParadigmCodeProposed, ParadigmCodeDescriptionOld, ParadigmCodeDescriptionProposed,
+          LocationOld, LocationProposed, ExCoOld, ExCoProposed,
+          Justification, SubmittedBy, SubmittedByEmail,
+          SubmittedDate, Status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      db.transaction(() => {
+        for (const r of items) {
+          const requestID = `REQ-BULK-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+          const now = new Date().toISOString();
+          
+          let existingData: any = {};
+          if (r.RequestType === 'Amendment' && r.ExistingCostCenterCode) {
+            existingData = db.prepare('SELECT * FROM cost_center_master WHERE CostCenterCode = ?').get(r.ExistingCostCenterCode) || {};
+          }
+
+          // If it's a creation and no code is provided, generate one
+          let proposedCode = r.ProposedCostCenterCode;
+          if (r.RequestType === 'Creation' && !proposedCode) {
+            const yearMonth = new Date().toISOString().slice(2, 7).replace('-', '');
+            proposedCode = `CC-${yearMonth}-${Math.floor(1000 + Math.random() * 9000)}`;
+          }
+
+          stmt.run(
+            requestID, r.RequestType, r.ExistingCostCenterCode || '', existingData.CostCenterName || '',
+            proposedCode || '', r.ProposedCostCenterName || '', 
+            existingData.Department || '', r.DepartmentProposed || '',
+            existingData.Team || '', r.TeamProposed || '', 
+            existingData.BusinessManager || '', r.BusinessManagerProposed || '',
+            existingData.PMO || '', r.PMOProposed || r.BusinessManagerProposed || '', 
+            existingData.HOD || '', r.HODProposed || '',
+            existingData.Domain || '', r.DomainProposed || '', 
+            existingData.Cluster || '', r.ClusterProposed || '',
+            existingData.Cluster1 || '', r.Cluster1Proposed || '', 
+            existingData.Cluster2 || '', r.Cluster2Proposed || '',
+            existingData.ParadigmCode || '', r.ParadigmCodeProposed || '', 
+            existingData.ParadigmCodeDescription || '', r.ParadigmCodeDescriptionProposed || '',
+            existingData.Location || '', r.LocationProposed || '', 
+            existingData.ExCo || '', r.ExCoProposed || '',
+            r.Justification || 'Bulk Upload', submittedBy, submittedByEmail,
+            now, 'Submitted'
+          );
+        }
+      })();
+
+      res.json({ success: true, count: items.length });
+    } catch (err) { 
+      console.error(err);
+      res.status(500).json({ error: 'Failed bulk upload' }); 
+    }
+  });
+
+  app.get('/api/requests/template', (req, res) => {
+    try {
+      const headers = [
+        'RequestType', 'ExistingCostCenterCode', 'ProposedCostCenterName', 
+        'DepartmentProposed', 'TeamProposed', 'BusinessManagerProposed', 
+        'HODProposed', 'DomainProposed', 'ClusterProposed', 
+        'Cluster1Proposed', 'Cluster2Proposed', 'ParadigmCodeProposed', 
+        'ParadigmCodeDescriptionProposed', 'LocationProposed', 'ExCoProposed', 
+        'Justification'
+      ];
+      
+      const sampleData = [
+        ['Creation', '', 'Sample CC Name', 'Finance', 'Accounts', 'John Doe', 'Sarah Smith', 'Global', 'EMEA', 'UK', 'London', 'P-1', 'Finance Paradigm', 'London', 'Yes', 'New budget line'],
+        ['Amendment', 'CC-1001', 'Updated Name', 'Finance', 'Billing', 'John Doe', 'Sarah Smith', 'Global', 'EMEA', 'UK', 'London', 'P-1', 'Billing Paradigm', 'London', 'Yes', 'Dept reorg']
+      ];
+
+      const ws = xlsx.utils.aoa_to_sheet([headers, ...sampleData]);
+      const wb = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(wb, ws, "Template");
+      
+      const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=CC_Request_Template.xlsx');
+      res.send(buffer);
+    } catch (err) { res.status(500).send('Error generating template'); }
+  });
+
   app.patch('/api/requests/:id', (req, res) => {
     try {
       const { id } = req.params;
