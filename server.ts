@@ -17,6 +17,7 @@ const DB_PATH = path.join(process.cwd(), 'ccms.sqlite');
 const PORT = 3000;
 
 let db: any;
+let rawDb: any;
 
 async function initDB() {
   console.log('>>> [START] Initializing Database...');
@@ -45,20 +46,21 @@ async function initDB() {
   }
 
   // Robust wrapper to mimic better-sqlite3 API while using sql.js
+  rawDb = db;
   const dbWrapper = {
     exec: (sql: string) => {
-      db.run(sql);
+      rawDb.run(sql);
       persistDB();
     },
     prepare: (sql: string) => {
       return {
         run: (...params: any[]) => {
-          db.run(sql, params);
+          rawDb.run(sql, params.length === 1 && Array.isArray(params[0]) ? params[0] : params);
           persistDB();
         },
         get: (...params: any[]) => {
-          const stmt = db.prepare(sql);
-          stmt.bind(params);
+          const stmt = rawDb.prepare(sql);
+          stmt.bind(params.length === 1 && Array.isArray(params[0]) ? params[0] : params);
           let result = null;
           if (stmt.step()) {
             result = stmt.getAsObject();
@@ -67,8 +69,8 @@ async function initDB() {
           return result;
         },
         all: (...params: any[]) => {
-          const stmt = db.prepare(sql);
-          stmt.bind(params);
+          const stmt = rawDb.prepare(sql);
+          stmt.bind(params.length === 1 && Array.isArray(params[0]) ? params[0] : params);
           const results = [];
           while (stmt.step()) {
             results.push(stmt.getAsObject());
@@ -80,14 +82,20 @@ async function initDB() {
     },
     transaction: (fn: Function) => {
       // Basic transaction wrapper for sql.js bulk ops
-      fn();
+      rawDb.run('BEGIN TRANSACTION');
+      try {
+        fn();
+        rawDb.run('COMMIT');
+      } catch (e) {
+        rawDb.run('ROLLBACK');
+        throw e;
+      }
       persistDB();
     }
   };
 
-  db.exec = dbWrapper.exec;
-  db.prepare = dbWrapper.prepare;
-  db.transaction = dbWrapper.transaction;
+  // Replace db methods with our wrapper
+  db = dbWrapper;
 
   // Create Tables
   db.exec(`
@@ -231,6 +239,7 @@ async function initDB() {
   });
 
   // Seed Users
+  console.log('>>> [INFO] Seeding Users...');
   const userSeed = [
     ['tejas.nagar123@gmail.com', 'Tejas', 'ADMIN,BUSINESS_MANAGER,PMO,HOD,EXCO,ISPL_PM'],
     ['manager@company.com', 'Sarah', 'BUSINESS_MANAGER'],
@@ -238,8 +247,19 @@ async function initDB() {
     ['ispl-pm@company.com', 'Alex (ISPL PM)', 'ISPL_PM']
   ];
 
-  const insertUser = db.prepare('INSERT OR REPLACE INTO users (email, displayName, roles) VALUES (?, ?, ?)');
-  userSeed.forEach(u => insertUser.run(u[0], u[1], u[2]));
+  try {
+    const checkUsers = db.prepare('SELECT count(*) as count FROM users').get();
+    if (!checkUsers || checkUsers.count === 0) {
+      console.log('>>> [INFO] Populating initial users...');
+      const insertUser = db.prepare('INSERT INTO users (email, displayName, roles) VALUES (?, ?, ?)');
+      userSeed.forEach(u => insertUser.run(u[0], u[1], u[2]));
+      console.log('>>> [OK] Users seeded.');
+    } else {
+      console.log(`>>> [INFO] Found ${checkUsers.count} existing users.`);
+    }
+  } catch (err) {
+    console.error('>>> [ERROR] User seeding failed:', err);
+  }
 
   // Seed Dummy Data
   const seedData = [
@@ -266,8 +286,9 @@ async function initDB() {
 }
 
 function persistDB() {
+  if (!rawDb) return;
   try {
-    const data = db.export();
+    const data = rawDb.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(DB_PATH, buffer);
   } catch (err) {

@@ -18,9 +18,17 @@ function AppContent() {
   const [fetchingUsers, setFetchingUsers] = React.useState(true);
 
   React.useEffect(() => {
+    console.log('>>> [FRONTEND] Fetching users from gateway...');
     fetch('/api/users')
-      .then(res => res.json())
+      .then(res => {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          throw new Error('API returned HTML instead of JSON. Ensure routes are defined before catch-all.');
+        }
+        return res.json();
+      })
       .then(data => {
+        console.log('>>> [FRONTEND] Users received:', data);
         if (Array.isArray(data)) {
           setAvailableUsers(data);
         } else {
@@ -30,7 +38,7 @@ function AppContent() {
         setFetchingUsers(false);
       })
       .catch((err) => {
-        console.error('Fetch error:', err);
+        console.error('>>> [FRONTEND] Fetch error:', err);
         setAvailableUsers([]);
         setFetchingUsers(false);
       });
